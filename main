@@ -1,0 +1,395 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <iomanip>
+#include <string>
+#include <sstream>
+
+using namespace std;
+
+class RelaxationSolver {
+private:
+    int n;
+    double omega;
+    double epsilon;
+    int maxSteps;
+    vector<double> x;
+    vector<vector<double>> A;
+    vector<double> b;
+
+    vector<vector<double>> B;
+    vector<double> c;
+
+public:
+    RelaxationSolver(const vector<vector<double>>& coefficients,
+        const vector<double>& constants,
+        double eps = 0.00001,
+        double om = 0.5,
+        int max_iter = 1000)
+        : A(coefficients), b(constants), epsilon(eps), omega(om), maxSteps(max_iter) {
+        n = A.size();
+        x.resize(n, 0.0);
+        B.resize(n, vector<double>(n, 0.0));
+        c.resize(n, 0.0);
+
+        initializeSystem();
+    }
+
+    void initializeSystem() {
+        for (int i = 0; i < n; ++i) {
+            if (abs(A[i][i]) < 1e-15) {
+                throw runtime_error("Нулевой диагональный элемент в строке " + to_string(i));
+            }
+            c[i] = b[i] / A[i][i];
+            for (int j = 0; j < n; ++j) {
+                B[i][j] = -A[i][j] / A[i][i];
+            }
+            B[i][i] = 0.0;
+        }
+    }
+
+    // Функция для красивого вывода чисел
+    string formatNumber(double value, int precision = 6) const {
+        stringstream ss;
+
+        if (value == 0.0) {
+            ss << "0." << string(precision, '0');
+            return ss.str();
+        }
+
+        if (abs(value) >= 0.001 && abs(value) < 10000) {
+            ss << fixed << setprecision(precision) << value;
+            string result = ss.str();
+            size_t dot_pos = result.find('.');
+            if (dot_pos != string::npos) {
+                result = result.substr(0, result.find_last_not_of('0') + 1);
+                if (result.back() == '.') {
+                    result += '0';
+                }
+            }
+            return result;
+        }
+        else {
+            ss << scientific << setprecision(2) << value;
+            return ss.str();
+        }
+    }
+
+    bool checkDiagonalDominance() const {
+        cout << "Проверка диагонального преобладания:" << endl;
+        bool isStrictlyDominant = true;
+
+        for (int i = 0; i < n; ++i) {
+            double diagonal = abs(A[i][i]);
+            double sum = 0.0;
+
+            for (int j = 0; j < n; ++j) {
+                if (i != j) {
+                    sum += abs(A[i][j]);
+                }
+            }
+
+            cout << "  Строка " << i + 1 << ": |" << formatNumber(A[i][i]) << "| "
+                << (diagonal > sum ? ">" : "<=")
+                << " " << formatNumber(sum) << " (сумма остальных)" << endl;
+
+            if (diagonal <= sum) {
+                isStrictlyDominant = false;
+            }
+        }
+
+        return isStrictlyDominant;
+    }
+
+    bool solve() {
+        cout << "=== МЕТОД РЕЛАКСАЦИИ ===" << endl;
+        cout << "Размерность: " << n << "x" << n << endl;
+        cout << "Параметр ω: " << formatNumber(omega) << endl;
+        cout << "Точность ε: " << formatNumber(epsilon) << endl;
+        cout << "Макс. итераций: " << maxSteps << endl << endl;
+
+        if (!checkDiagonalDominance()) {
+            cout << "ВНИМАНИЕ: Отсутствует строгое диагональное преобладание!" << endl;
+            cout << "Метод может не сходиться или сходиться медленно." << endl;
+        }
+
+        vector<double> xk1(n, 0.0);
+        int step = 0;
+        double epsilon_max;
+
+        cout << "Начальное приближение:";
+        for (int i = 0; i < n; ++i) {
+            cout << " x" << i + 1 << " = " << formatNumber(x[i]);
+        }
+        cout << endl << endl;
+
+        printIterationHeader();
+
+        do {
+            // Вычисление следующего приближения
+            for (int i = 0; i < n; ++i) {
+                xk1[i] = (1.0 - omega) * x[i];
+                double s = c[i];
+
+                for (int j = 0; j < i; ++j) {
+                    s += B[i][j] * xk1[j];
+                }
+                for (int j = i + 1; j < n; ++j) {
+                    s += B[i][j] * x[j];
+                }
+
+                xk1[i] += omega * s;
+            }
+
+            // Вычисление максимального изменения (epsilon_max)
+            epsilon_max = 0.0;
+            for (int i = 0; i < n; ++i) {
+                double change = abs(x[i] - xk1[i]);
+                if (change > epsilon_max) {
+                    epsilon_max = change;
+                }
+            }
+
+            // Обновление решения
+            for (int i = 0; i < n; ++i) {
+                x[i] = xk1[i];
+            }
+
+            ++step;
+
+            // Вывод информации о текущей итерации
+            printIterationInfo(step, epsilon_max);
+
+        } while ((epsilon_max >= epsilon) && (step < maxSteps));
+
+        cout << endl;
+
+        if (step >= maxSteps) {
+            cout << "Достигнуто максимальное количество итераций!" << endl;
+            cout << "Текущая epsilon_max: " << formatNumber(epsilon_max) << endl;
+            return false;
+        }
+        else {
+            cout << "Сходимость достигнута за " << step << " итераций" << endl;
+            cout << "Финальная epsilon_max: " << formatNumber(epsilon_max) << endl;
+            return true;
+        }
+    }
+
+    void printIterationHeader() const {
+        cout << setw(6) << "Итер."
+            << setw(20) << "epsilon_max"
+            << setw(12) << "x1"
+            << setw(12) << "x2"
+            << setw(12) << "x3";
+        if (n > 3) {
+            for (int i = 3; i < n; ++i) {
+                cout << setw(12) << "x" + to_string(i + 1);
+            }
+        }
+        cout << endl;
+        cout << string(70 + max(0, n - 3) * 12, '-') << endl;
+    }
+
+    void printIterationInfo(int step, double epsilon_max) const {
+        if (step <= 10 || step % 10 == 0 || epsilon_max < epsilon) {
+            cout << setw(6) << step
+                << setw(20) << formatNumber(epsilon_max)
+                << fixed;
+            for (int i = 0; i < min(n, 3); ++i) {
+                cout << setw(12) << setprecision(6) << x[i];
+            }
+            if (n > 3) {
+                for (int i = 3; i < n; ++i) {
+                    cout << setw(12) << setprecision(6) << x[i];
+                }
+            }
+            cout << endl;
+        }
+    }
+
+    vector<double> getSolution() const {
+        return x;
+    }
+
+    void printSolution() const {
+        cout << endl << "РЕЗУЛЬТАТ:" << endl;
+        for (int i = 0; i < n; ++i) {
+            cout << "  x" << i + 1 << " = " << formatNumber(x[i], 8) << endl;
+        }
+    }
+
+    /*void verifySolution() const {
+        cout << endl << "ПРОВЕРКА РЕШЕНИЯ:" << endl;
+        double maxResidual = 0.0;
+
+        for (int i = 0; i < n; ++i) {
+            double Ax = 0.0;
+            for (int j = 0; j < n; ++j) {
+                Ax += A[i][j] * x[j];
+            }
+            double residual = b[i] - Ax;
+            maxResidual = max(maxResidual, abs(residual));
+
+            cout << "  Уравнение " << i + 1 << ": "
+                << setw(12) << formatNumber(Ax, 6)
+                << " ≈ " << setw(12) << formatNumber(b[i], 6)
+                << " (невязка: " << formatNumber(residual, 2) << ")" << endl;
+        }
+
+        cout << "Максимальная невязка: " << formatNumber(maxResidual, 2) << endl;
+    }*/
+
+    void setInitialGuess(const vector<double>& guess) {
+        if (guess.size() != n) {
+            throw invalid_argument("Неверный размер начального приближения");
+        }
+        x = guess;
+    }
+};
+
+void inputParameters(double& epsilon, double& omega, int& maxSteps) {
+    cout << "Введите параметры метода:" << endl;
+
+    cout << "Точность epsilon (по умолчанию 0.000001): ";
+    string input;
+    getline(cin, input);
+    if (input.empty()) {
+        epsilon = 0.000001;
+    }
+    else {
+        epsilon = stod(input);
+    }
+
+    cout << "Параметр релаксации ω (0 < ω < 2, по умолчанию 0.5): ";
+    getline(cin, input);
+    if (input.empty()) {
+        omega = 0.5;
+    }
+    else {
+        omega = stod(input);
+        if (omega <= 0 || omega >= 2) {
+            cout << "Предупреждение: ω должно быть в интервале (0, 2)!" << endl;
+        }
+    }
+
+    cout << "Максимальное число итераций (по умолчанию 1000): ";
+    getline(cin, input);
+    if (input.empty()) {
+        maxSteps = 1000;
+    }
+    else {
+        maxSteps = stoi(input);
+    }
+}
+
+
+vector<double> gaussSolveFractional(const vector<vector<double>>& A, const vector<double>& b) {
+    int n = A.size();
+
+    // Создаем расширенную матрицу
+    vector<vector<double>> augmented(n, vector<double>(n + 1));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            augmented[i][j] = A[i][j];
+        }
+        augmented[i][n] = b[i];
+    }
+
+    cout << "Начальная матрица:" << endl;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j <= n; j++) {
+            cout << setw(10) << fixed << setprecision(6) << augmented[i][j] << " ";
+        }
+        cout << endl;
+    }
+
+    // Прямой ход
+    for (int k = 0; k < n; k++) {
+        // Выбор главного элемента
+        int maxRow = k;
+        for (int i = k + 1; i < n; i++) {
+            if (abs(augmented[i][k]) > abs(augmented[maxRow][k])) {
+                maxRow = i;
+            }
+        }
+
+        if (abs(augmented[maxRow][k]) < 1e-15) {
+            throw runtime_error("Система вырождена");
+        }
+
+        if (maxRow != k) {
+            swap(augmented[k], augmented[maxRow]);
+        }
+
+        // Нормализация
+        double pivot = augmented[k][k];
+        for (int j = k; j <= n; j++) {
+            augmented[k][j] /= pivot;
+        }
+
+        // Исключение
+        for (int i = k + 1; i < n; i++) {
+            double factor = augmented[i][k];
+            for (int j = k; j <= n; j++) {
+                augmented[i][j] -= factor * augmented[k][j];
+            }
+        }
+    }
+
+    // Обратный ход
+    vector<double> x(n);
+    for (int i = n - 1; i >= 0; i--) {
+        x[i] = augmented[i][n];
+        for (int j = i + 1; j < n; j++) {
+            x[i] -= augmented[i][j] * x[j];
+        }
+    }
+
+    return x;
+}
+
+int main() {
+    vector<vector<double>> A = {
+        {0.78, -0.02, -0.12, -0.14},
+        {-0.02, 0.86, -0.04, -0.06},
+        {-0.12, -0.04, 0.72, -0.08},
+        {-0.14, 0.06, 0.08, 0.74}
+    };
+
+    vector<double> b = {0.76, 0.08, 1.12, 0.74};
+
+    double epsilon, omega;
+    int maxSteps;
+    inputParameters(epsilon, omega, maxSteps);
+
+    try {
+        vector<double> solution = gaussSolveFractional(A, b);
+
+        cout << "\nРешение:" << endl;
+        for (size_t i = 0; i < solution.size(); i++) {
+            cout << "x" << i + 1 << " = " << fixed << setprecision(10) << solution[i] << endl;
+        }
+
+        cout << "\nПроверка:" << endl;
+        for (int i = 0; i < A.size(); i++) {
+            double sum = 0.0;
+            for (int j = 0; j < A[i].size(); j++) {
+                sum += A[i][j] * solution[j];
+            }
+            cout << "Ур. " << i + 1 << ": " << sum << " (ожидалось: " << b[i] << ")" << endl;
+        }
+
+        RelaxationSolver solver(A, b, epsilon, omega, maxSteps);
+
+        if (solver.solve()) {
+            solver.printSolution();
+            //solver.verifySolution();
+        }
+    }
+    catch (const exception& e) {
+        cout << "Ошибка: " << e.what() << endl;
+    }
+
+    return 0;
+}

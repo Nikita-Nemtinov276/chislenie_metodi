@@ -40,7 +40,6 @@ string formatNumber(double value, int precision = 6) {
     }
 }
 
-// ГАУСС
 vector<double> gaussSolve(const vector<vector<double>>& A,
     const vector<double>& b)
 {
@@ -58,42 +57,65 @@ vector<double> gaussSolve(const vector<vector<double>>& A,
         M[i][n] = b[i];
     }
 
-    // Прямой ход
+    // Прямой ход с частичным выбором ведущего элемента
+    int rank = 0;
     for (int k = 0; k < n; k++) {
 
-        // Выбор ведущего элемента по модулю в столбце k
-        int pivotRow = k;
-        double maxVal = abs(M[k][k]);
-
-        for (int i = k + 1; i < n; i++) {
+        // Поиск строки с максимальным элементом в столбце k
+        int pivotRow = rank;
+        double maxVal = 0.0;
+        for (int i = rank; i < n; i++) {
             if (abs(M[i][k]) > maxVal) {
                 maxVal = abs(M[i][k]);
                 pivotRow = i;
             }
         }
 
-        if (maxVal < numeric_limits<double>::epsilon())
-            throw runtime_error("Матрица вырождена (нулевой столбец).");
+        // Если ведущий элемент в столбце почти 0 – пропускаем (колонка не увеличивает ранг)
+        if (maxVal < 1e-15)
+            continue;
 
-        if (pivotRow != k)
-            swap(M[k], M[pivotRow]);
+        // Переставляем найденную строку на позицию текущего ранга
+        swap(M[pivotRow], M[rank]);
 
-        double pivot = M[k][k];
-
-        // Нормализация ведущей строки
+        // Нормализуем строку
+        double pivot = M[rank][k];
         for (int j = k; j <= n; j++)
-            M[k][j] /= pivot;
+            M[rank][j] /= pivot;
 
-        // Обнуление элементов ниже
-        for (int i = k + 1; i < n; i++) {
+        // Обнуляем строки ниже
+        for (int i = 0; i < n; i++) {
+            if (i == rank) continue;
             double factor = M[i][k];
             if (abs(factor) < 1e-15) continue;
             for (int j = k; j <= n; j++)
-                M[i][j] -= factor * M[k][j];
+                M[i][j] -= factor * M[rank][j];
+        }
+
+        rank++;
+    }
+
+    // ---- Анализ строк на несовместность и бесконечность ----
+    for (int i = 0; i < n; i++) {
+        bool allZero = true;
+        for (int j = 0; j < n; j++) {
+            if (abs(M[i][j]) > 1e-15) {
+                allZero = false;
+                break;
+            }
+        }
+        if (allZero) {
+            if (abs(M[i][n]) > 1e-15) {
+                throw runtime_error("Система несовместна: 0 = " + formatNumber(M[i][n]) + " → 0 решений");
+            }
         }
     }
 
-    // Обратный ход
+    if (rank < n) {
+        throw runtime_error("Система имеет бесконечно много решений (есть свободные переменные, ранг < n)");
+    }
+
+    // ---- Обратный ход ----
     vector<double> x(n);
     for (int i = n - 1; i >= 0; i--) {
         x[i] = M[i][n];
@@ -103,6 +125,7 @@ vector<double> gaussSolve(const vector<vector<double>>& A,
 
     return x;
 }
+
 
 // Проверка решения
 void CheckSolution(const vector<vector<double>>& A,
@@ -301,13 +324,13 @@ public:
 int main() {
     // Система
     vector<vector<double>> A = {
-        {0.78, -0.02, -0.12, -0.14},
+        {0, 0, 0, 0},
         {-0.02, 0.86, -0.04, -0.06},
         {-0.12, -0.04, 0.72, -0.08},
         {-0.14,  0.06,  0.08, 0.74}
     };
 
-    vector<double> b = { 0.76, 0.08, 1.12, 0.74 };
+    vector<double> b = { 0, 0, 0, 0};
 
     double epsilon, omega;
     int maxSteps;

@@ -40,9 +40,9 @@ string formatNumber(double value, int precision = 6) {
     }
 }
 
+// ---- Функция Гаусса с обработкой бесконечно многих решений ----
 vector<double> gaussSolve(const vector<vector<double>>& A,
-    const vector<double>& b)
-{
+    const vector<double>& b) {
     int n = static_cast<int>(A.size());
     if (n == 0) throw invalid_argument("Пустая матрица A");
 
@@ -57,70 +57,83 @@ vector<double> gaussSolve(const vector<vector<double>>& A,
         M[i][n] = b[i];
     }
 
-    // Прямой ход с частичным выбором ведущего элемента
-    int rank = 0;
-    for (int k = 0; k < n; k++) {
+    int rankA = 0; // ранг матрицы A
+    int rankAug = 0; // ранг расширенной матрицы
 
+    // Прямой ход с частичным выбором ведущего элемента
+    for (int k = 0; k < n; k++) {
         // Поиск строки с максимальным элементом в столбце k
-        int pivotRow = rank;
+        int pivotRow = -1;
         double maxVal = 0.0;
-        for (int i = rank; i < n; i++) {
+        for (int i = rankA; i < n; i++) {
             if (abs(M[i][k]) > maxVal) {
                 maxVal = abs(M[i][k]);
                 pivotRow = i;
             }
         }
 
-        // Если ведущий элемент в столбце почти 0 – пропускаем (колонка не увеличивает ранг)
-        if (maxVal < 1e-15)
-            continue;
+        if (maxVal < 1e-15) continue; // свободная переменная
 
-        // Переставляем найденную строку на позицию текущего ранга
-        swap(M[pivotRow], M[rank]);
+        swap(M[pivotRow], M[rankA]);
 
-        // Нормализуем строку
-        double pivot = M[rank][k];
+        double pivot = M[rankA][k];
         for (int j = k; j <= n; j++)
-            M[rank][j] /= pivot;
+            M[rankA][j] /= pivot;
 
-        // Обнуляем строки ниже
         for (int i = 0; i < n; i++) {
-            if (i == rank) continue;
+            if (i == rankA) continue;
             double factor = M[i][k];
             if (abs(factor) < 1e-15) continue;
             for (int j = k; j <= n; j++)
-                M[i][j] -= factor * M[rank][j];
+                M[i][j] -= factor * M[rankA][j];
         }
-
-        rank++;
+        
+        rankA++;
     }
 
-    // ---- Анализ строк на несовместность и бесконечность ----
+    cout << "\nКонечная ступенчатая матрица [A|b]:\n";
     for (int i = 0; i < n; i++) {
-        bool allZero = true;
-        for (int j = 0; j < n; j++) {
+        for (int j = 0; j <= n; j++)
+            cout << setw(12) << formatNumber(M[i][j]) << " ";
+        cout << "\n";
+    }
+
+    // Вычисляем ранг расширенной матрицы
+    rankAug = 0;
+    for (int i = 0; i < n; i++) {
+        bool nonZero = false;
+        for (int j = 0; j <= n; j++) {
             if (abs(M[i][j]) > 1e-15) {
-                allZero = false;
+                nonZero = true;
                 break;
             }
         }
-        if (allZero) {
-            if (abs(M[i][n]) > 1e-15) {
-                throw runtime_error("Система несовместна: 0 = " + formatNumber(M[i][n]) + " → 0 решений");
+        if (nonZero) rankAug++;
+    }
+
+    if (rankA < rankAug) {
+        throw runtime_error("Система несовместна → 0 решений");
+    }
+    else if (rankA < n) {
+        cout << "Решений бесконечно много\n";
+    }
+
+    // Обратный ход (свободные переменные = 0)
+    vector<double> x(n, 0.0);
+
+    for (int i = n - 1; i >= 0; i--) {
+        int pivotCol = -1;
+        for (int j = 0; j < n; j++) {
+            if (abs(M[i][j]) > 1e-15) {
+                pivotCol = j;
+                break;
             }
         }
-    }
-
-    if (rank < n) {
-        throw runtime_error("Система имеет бесконечно много решений (есть свободные переменные, ранг < n)");
-    }
-
-    // ---- Обратный ход ----
-    vector<double> x(n);
-    for (int i = n - 1; i >= 0; i--) {
-        x[i] = M[i][n];
-        for (int j = i + 1; j < n; j++)
-            x[i] -= M[i][j] * x[j];
+        if (pivotCol == -1) continue; // строка из нулей
+        double sum = 0.0;
+        for (int j = pivotCol + 1; j < n; j++)
+            sum += M[i][j] * x[j];
+        x[pivotCol] = M[i][n] - sum;
     }
 
     return x;
@@ -130,8 +143,7 @@ vector<double> gaussSolve(const vector<vector<double>>& A,
 // Проверка решения
 void CheckSolution(const vector<vector<double>>& A,
     const vector<double>& x,
-    const vector<double>& b)
-{
+    const vector<double>& b) {
     cout << "\nПроверка решения (подстановка в уравнения):\n";
 
     int n = A.size();
@@ -140,14 +152,12 @@ void CheckSolution(const vector<vector<double>>& A,
     for (int i = 0; i < n; i++) {
         cout << "\nУравнение " << i + 1 << ":\n";
 
-        // Печать уравнения с коэффициентами
         for (int j = 0; j < n; j++) {
             cout << "  (" << formatNumber(A[i][j]) << ")*x" << (j + 1);
             if (j + 1 < n) cout << " +";
             cout << "\n";
         }
 
-        // Печать подстановки x
         cout << "\nПодстановка x:\n";
         for (int j = 0; j < n; j++) {
             cout << "  (" << formatNumber(A[i][j]) << ")*(" << formatNumber(x[j]) << ")";
@@ -155,7 +165,6 @@ void CheckSolution(const vector<vector<double>>& A,
             cout << "\n";
         }
 
-        // Вычисление результата
         double sum = 0.0;
         for (int j = 0; j < n; j++)
             sum += A[i][j] * x[j];
@@ -164,7 +173,6 @@ void CheckSolution(const vector<vector<double>>& A,
         cout << "Разница: " << (sum - b[i]) << "\n";
     }
 }
-
 
 // КЛАСС SOR (РЕЛАКСАЦИИ)
 class RelaxationSolver {
@@ -184,8 +192,7 @@ public:
         double eps = 1e-6,
         double w = 1.0,
         int maxIter = 1000)
-        : A(A_), b(b_), epsilon(eps), omega(w), maxSteps(maxIter)
-    {
+        : A(A_), b(b_), epsilon(eps), omega(w), maxSteps(maxIter) {
         n = static_cast<int>(A.size());
         if (n == 0) throw invalid_argument("Пустая матрица A");
         if (b.size() != static_cast<size_t>(n))
@@ -207,7 +214,6 @@ public:
         x = guess;
     }
 
-    // Норма невязки ||Ax - b||
     double residualNorm() const {
         double rmax = 0.0;
         for (int i = 0; i < n; i++) {
@@ -219,7 +225,6 @@ public:
         return rmax;
     }
 
-    // Проверка диагонального преобладания
     bool checkDiagonalDominance() const {
         bool strict = true;
         cout << "Проверка диагонального преобладания:\n";
@@ -241,7 +246,6 @@ public:
         return strict;
     }
 
-    // Метод релаксации SOR
     bool solve() {
         cout << "\nМЕТОД РЕЛАКСАЦИИ SOR\n";
         cout << "omega = " << omega << ", epsilon = " << epsilon << ", maxSteps = " << maxSteps << "\n\n";
@@ -261,24 +265,19 @@ public:
         cout << string(83, '-') << "\n";
 
         for (; step < maxSteps; step++) {
-
             double dx_max = 0.0;
 
             for (int i = 0; i < n; i++) {
                 double sigma = 0.0;
 
-                // Используем уже обновлённые значения x[j] для j < i
                 for (int j = 0; j < i; j++)
                     sigma += A[i][j] * x_new[j];
 
-                // Используем старые значения x[j] для j > i
                 for (int j = i + 1; j < n; j++)
                     sigma += A[i][j] * x[j];
 
                 double xi_old = x[i];
 
-                // Формула SOR:
-                // x_i^{k+1} = x_i^k + omega * ( (b_i - sigma) / a_ii - x_i^k )
                 x_new[i] = x[i] + omega * ((b[i] - sigma) / A[i][i] - x[i]);
 
                 dx_max = max(dx_max, abs(x_new[i] - xi_old));
@@ -323,14 +322,30 @@ public:
 
 int main() {
     // Система
-    vector<vector<double>> A = {
-        {0, 0, 0, 0},
-        {-0.02, 0.86, -0.04, -0.06},
-        {-0.12, -0.04, 0.72, -0.08},
-        {-0.14,  0.06,  0.08, 0.74}
+    /*vector<vector<double>> A = {
+    {1, 1},
+    {1, 1}
     };
 
-    vector<double> b = { 0, 0, 0, 0};
+    vector<double> b = { 2, 3 };*/
+
+
+
+    vector<vector<double>> A = {
+    {1, 2, 3},
+    {4, 5, 6},
+    {7, 8, 9}
+    };
+
+    vector<double> b = { 3, 6, 9 };
+
+    /*vector<vector<double>> A = {
+    {1, 1},
+    {2, 2}
+    };
+
+    vector<double> b = { 2, 4 };*/
+
 
     double epsilon, omega;
     int maxSteps;
